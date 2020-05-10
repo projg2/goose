@@ -1,4 +1,7 @@
 import json
+import random
+
+from pathlib import Path
 
 from django.db import transaction
 from django.http import (
@@ -25,6 +28,25 @@ class GooseDataError(Exception):
 
 class GooseLimitError(Exception):
     pass
+
+
+def index(request: HttpRequest) -> HttpResponse:
+    with (Path(__file__).parent / '..' / 'README.rst').open() as f:
+        body = f.read().splitlines()
+
+    assert body[:3] == ['=====', 'GOOSE', '=====']
+    o_adjs = ['Optimized', 'Official', 'Oleophobic', 'Omnipotent',
+              'Omnivorous', 'Online', 'Open', 'Ordinary', 'Orderly']
+    e_nouns = ['Edifice', 'Emporium', 'Engine', 'Establishment',
+               'Excavator', 'Extractor']
+    oo_choice = ' '.join(random.sample(o_adjs, 2))
+    e_choice = random.choice(e_nouns)
+    body[1] += f': Gentoo {oo_choice} Statistic {e_choice}'
+    body[0] = len(body[1]) * '='
+    body[2] = body[0]
+
+    return HttpResponse('\n'.join(body),
+                        content_type='text/plain')
 
 
 def add_data(data_cls: DataClass, value: str) -> None:

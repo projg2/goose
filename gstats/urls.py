@@ -19,5 +19,6 @@ from django.urls import path
 import goose.views
 
 urlpatterns = [
+    path('', goose.views.index, name='index'),
     path('submit', goose.views.submit, name='submit'),
 ]
