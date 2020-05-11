@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.0/ref/settings/
 """
 
+import datetime
 import os
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -88,3 +89,7 @@ STATIC_URL = '/static/'
 # 'shiftdata' calls.  For example, if you call 'shiftdata' once a day,
 # this is in days.
 GOOSE_MAX_PERIODS = 7
+
+# Min delay between two successive 'shiftdata' calls.  Used to prevent
+# accidentally calling it twice in a row.
+GOOSE_MIN_UPDATE_DELAY = datetime.timedelta(hours=23)

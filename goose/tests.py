@@ -252,7 +252,7 @@ class ShiftDataTests(TestCase):
         dt = datetime.datetime.utcnow()
         create_data1(None)
         management.call_command('shiftdata',
-                                timestamp=dt.isoformat(),
+                                timestamp=dt,
                                 max_periods=2)
 
         self.assertEqual(
@@ -270,7 +270,7 @@ class ShiftDataTests(TestCase):
         new_dt = old_dt + datetime.timedelta(days=1)
         create_data1(old_dt)
         management.call_command('shiftdata',
-                                timestamp=new_dt.isoformat(),
+                                timestamp=new_dt,
                                 max_periods=2)
 
         self.assertEqual(
@@ -290,10 +290,10 @@ class ShiftDataTests(TestCase):
         create_data1(old_dt)
 
         management.call_command('shiftdata',
-                                timestamp=mid_dt.isoformat(),
+                                timestamp=mid_dt,
                                 max_periods=2)
         management.call_command('shiftdata',
-                                timestamp=new_dt.isoformat(),
+                                timestamp=new_dt,
                                 max_periods=2)
 
         self.assertEqual(
@@ -317,10 +317,10 @@ class ShiftDataTests(TestCase):
         create_data1(old_dt)
 
         management.call_command('shiftdata',
-                                timestamp=mid_dt.isoformat(),
+                                timestamp=mid_dt,
                                 max_periods=2)
         management.call_command('shiftdata',
-                                timestamp=new_dt.isoformat(),
+                                timestamp=new_dt,
                                 max_periods=2)
 
         self.assertEqual(
@@ -342,12 +342,12 @@ class ShiftDataTests(TestCase):
         create_data1(old_dt)
         create_data1(None)
         management.call_command('shiftdata',
-                                timestamp=mid_dt.isoformat(),
+                                timestamp=mid_dt,
                                 max_periods=2)
 
         create_data1(None)
         management.call_command('shiftdata',
-                                timestamp=new_dt.isoformat(),
+                                timestamp=new_dt,
                                 max_periods=2)
 
         self.assertEqual(
@@ -363,4 +363,22 @@ class ShiftDataTests(TestCase):
                 ('world', 'dev-libs/libfoo', 5, new_dt),
                 ('world', 'dev-util/bar', 1, mid_dt),
                 ('world', 'dev-util/bar', 1, new_dt),
+            ])
+
+    def test_too_frequent(self) -> None:
+        old_dt = datetime.datetime.utcnow()
+        new_dt = old_dt + datetime.timedelta(hours=12)
+
+        management.call_command('shiftdata',
+                                timestamp=old_dt,
+                                max_periods=2)
+        with self.assertRaises(management.CommandError):
+            management.call_command('shiftdata',
+                                    timestamp=new_dt,
+                                    max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('stamp', '', 1, old_dt),
             ])
