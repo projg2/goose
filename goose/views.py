@@ -8,8 +8,8 @@ from django.http import (
     HttpRequest,
     HttpResponse,
     HttpResponseBadRequest,
-    HttpResponseNotAllowed,
     )
+from django.views.decorators import http as decorators_http
 
 from goose.models import DataClass, Value, Count
 
@@ -30,6 +30,7 @@ class GooseLimitError(Exception):
     pass
 
 
+@decorators_http.require_http_methods(['GET', 'HEAD'])
 def index(request: HttpRequest) -> HttpResponse:
     with (Path(__file__).parent / '..' / 'README.rst').open() as f:
         body = f.read().splitlines()
@@ -62,9 +63,8 @@ def add_data(data_cls: DataClass, value: str) -> None:
         count.save()
 
 
+@decorators_http.require_http_methods(['PUT'])
 def submit(request: HttpRequest) -> HttpResponse:
-    if request.method != 'PUT':
-        return HttpResponseNotAllowed(['PUT'])
     if request.content_type != 'application/json':
         return HttpResponseUnsupportedMediaType()
 
