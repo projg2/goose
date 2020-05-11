@@ -48,7 +48,7 @@ class Command(BaseCommand):
                      or settings.GOOSE_MIN_UPDATE_DELAY)
 
         stamps = sorted(set(x[0] for x in Count.objects
-                            .exclude(inclusion_time__exact=None)
+                            .filter(inclusion_time__isnull=False)
                             .values_list('inclusion_time')))
         if stamps:
             if dt - stamps[-1] < min_delay:
@@ -66,5 +66,5 @@ class Command(BaseCommand):
                     value='')[0],
                 count=1,
                 inclusion_time=None)
-            Count.objects.filter(inclusion_time__exact=None).update(
+            Count.objects.filter(inclusion_time__isnull=True).update(
                 inclusion_time=dt)
