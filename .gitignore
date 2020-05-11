@@ -1,4 +1,6 @@
 __pycache__/
+/.coverage
 /.mypy_cache/
 /.tox/
+/coverage.xml
 /db.sqlite3
