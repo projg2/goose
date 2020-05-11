@@ -80,3 +80,11 @@ USE_TZ = False
 # https://docs.djangoproject.com/en/3.0/howto/static-files/
 
 STATIC_URL = '/static/'
+
+
+# == goose configuration ==
+
+# Max number of partial counts to keep, in number of successive
+# 'shiftdata' calls.  For example, if you call 'shiftdata' once a day,
+# this is in days.
+GOOSE_MAX_PERIODS = 7

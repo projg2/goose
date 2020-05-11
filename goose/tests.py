@@ -1,5 +1,7 @@
 import datetime
+import typing
 
+from django.core import management
 from django.db import transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -8,10 +10,44 @@ from goose.models import Count, DataClass, Value
 
 
 def count_to_tuple(count: Count) -> tuple:
-    return (count.value.data_class.name,
-            count.value.value,
-            count.count,
-            count.inclusion_time)
+    return value_to_tuple(count.value) + (
+        count.count,
+        count.inclusion_time)
+
+
+def value_to_tuple(value: Value) -> tuple:
+    return (value.data_class.name,
+            value.value)
+
+
+def create_data1(dt: typing.Optional[datetime.datetime]) -> None:
+    profile = DataClass.objects.get(name='profile')
+    world = DataClass.objects.get(name='world')
+    with transaction.atomic():
+        Count.objects.create(
+            value=Value.objects.get_or_create(
+                data_class=profile,
+                value='default/linux/amd64/17.0')[0],
+            count=3,
+            inclusion_time=dt)
+        Count.objects.create(
+            value=Value.objects.get_or_create(
+                data_class=world,
+                value='dev-libs/libfoo')[0],
+            count=5,
+            inclusion_time=dt)
+        Count.objects.create(
+            value=Value.objects.get_or_create(
+                data_class=world,
+                value='dev-libs/libbar')[0],
+            count=2,
+            inclusion_time=dt)
+        Count.objects.create(
+            value=Value.objects.get_or_create(
+                data_class=world,
+                value='dev-util/bar')[0],
+            count=1,
+            inclusion_time=dt)
 
 
 class SubmissionTests(TestCase):
@@ -111,34 +147,8 @@ class SubmissionTests(TestCase):
             ])
 
     def test_new_submission_with_existing_data(self) -> None:
-        profile = DataClass.objects.get(name='profile')
-        world = DataClass.objects.get(name='world')
         dt = datetime.datetime.utcnow()
-        with transaction.atomic():
-            Count.objects.create(
-                value=Value.objects.create(
-                    data_class=profile,
-                    value='default/linux/amd64/17.0'),
-                count=3,
-                inclusion_time=dt)
-            Count.objects.create(
-                value=Value.objects.create(
-                    data_class=world,
-                    value='dev-libs/libfoo'),
-                count=5,
-                inclusion_time=dt)
-            Count.objects.create(
-                value=Value.objects.create(
-                    data_class=world,
-                    value='dev-libs/libbar'),
-                count=2,
-                inclusion_time=dt)
-            Count.objects.create(
-                value=Value.objects.create(
-                    data_class=world,
-                    value='dev-util/bar'),
-                count=1,
-                inclusion_time=dt)
+        create_data1(dt)
 
         resp = self.client.put(reverse('submit'),
                                content_type='application/json',
@@ -235,3 +245,122 @@ class SubmissionTests(TestCase):
                                      ]})
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(Count.objects.all())
+
+
+class ShiftDataTests(TestCase):
+    def test_new_data(self) -> None:
+        dt = datetime.datetime.utcnow()
+        create_data1(None)
+        management.call_command('shiftdata',
+                                timestamp=dt.isoformat(),
+                                max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('profile', 'default/linux/amd64/17.0', 3, dt),
+                ('stamp', '', 1, dt),
+                ('world', 'dev-libs/libbar', 2, dt),
+                ('world', 'dev-libs/libfoo', 5, dt),
+                ('world', 'dev-util/bar', 1, dt),
+            ])
+
+    def test_old_data(self) -> None:
+        old_dt = datetime.datetime.utcnow()
+        new_dt = old_dt + datetime.timedelta(days=1)
+        create_data1(old_dt)
+        management.call_command('shiftdata',
+                                timestamp=new_dt.isoformat(),
+                                max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('profile', 'default/linux/amd64/17.0', 3, old_dt),
+                ('stamp', '', 1, new_dt),
+                ('world', 'dev-libs/libbar', 2, old_dt),
+                ('world', 'dev-libs/libfoo', 5, old_dt),
+                ('world', 'dev-util/bar', 1, old_dt),
+            ])
+
+    def test_very_old_data(self) -> None:
+        old_dt = datetime.datetime.utcnow()
+        mid_dt = old_dt + datetime.timedelta(days=1)
+        new_dt = mid_dt + datetime.timedelta(days=1)
+        create_data1(old_dt)
+
+        management.call_command('shiftdata',
+                                timestamp=mid_dt.isoformat(),
+                                max_periods=2)
+        management.call_command('shiftdata',
+                                timestamp=new_dt.isoformat(),
+                                max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('stamp', '', 1, mid_dt),
+                ('stamp', '', 1, new_dt),
+            ])
+        self.assertEqual(
+            sorted(value_to_tuple(x) for x in Value.objects.all()),
+            [
+                ('stamp', ''),
+            ])
+
+    def test_prehistoric_data(self) -> None:
+        ancient_dt = datetime.datetime.utcnow()
+        old_dt = ancient_dt + datetime.timedelta(days=1)
+        mid_dt = old_dt + datetime.timedelta(days=1)
+        new_dt = mid_dt + datetime.timedelta(days=1)
+        create_data1(ancient_dt)
+        create_data1(old_dt)
+
+        management.call_command('shiftdata',
+                                timestamp=mid_dt.isoformat(),
+                                max_periods=2)
+        management.call_command('shiftdata',
+                                timestamp=new_dt.isoformat(),
+                                max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('stamp', '', 1, mid_dt),
+                ('stamp', '', 1, new_dt),
+            ])
+        self.assertEqual(
+            sorted(value_to_tuple(x) for x in Value.objects.all()),
+            [
+                ('stamp', ''),
+            ])
+
+    def test_mixed_data(self) -> None:
+        old_dt = datetime.datetime.utcnow()
+        mid_dt = old_dt + datetime.timedelta(days=1)
+        new_dt = mid_dt + datetime.timedelta(days=1)
+        create_data1(old_dt)
+        create_data1(None)
+        management.call_command('shiftdata',
+                                timestamp=mid_dt.isoformat(),
+                                max_periods=2)
+
+        create_data1(None)
+        management.call_command('shiftdata',
+                                timestamp=new_dt.isoformat(),
+                                max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('profile', 'default/linux/amd64/17.0', 3, mid_dt),
+                ('profile', 'default/linux/amd64/17.0', 3, new_dt),
+                ('stamp', '', 1, mid_dt),
+                ('stamp', '', 1, new_dt),
+                ('world', 'dev-libs/libbar', 2, mid_dt),
+                ('world', 'dev-libs/libbar', 2, new_dt),
+                ('world', 'dev-libs/libfoo', 5, mid_dt),
+                ('world', 'dev-libs/libfoo', 5, new_dt),
+                ('world', 'dev-util/bar', 1, mid_dt),
+                ('world', 'dev-util/bar', 1, new_dt),
+            ])
