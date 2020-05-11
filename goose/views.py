@@ -1,13 +1,15 @@
+import itertools
 import json
 import random
 
 from pathlib import Path
 
-from django.db import transaction
+from django.db import models, transaction
 from django.http import (
     HttpRequest,
     HttpResponse,
     HttpResponseBadRequest,
+    JsonResponse,
     )
 from django.views.decorators import http as decorators_http
 
@@ -117,3 +119,24 @@ def submit(request: HttpRequest) -> HttpResponse:
 
     return HttpResponse('Thank you, data added!\n',
                         content_type='text/plain')
+
+
+@decorators_http.require_http_methods(['GET', 'HEAD'])
+def stats_json(request: HttpRequest) -> HttpResponse:
+    counts = (
+        Value.objects
+        .select_related('data_class')
+        .filter(data_class__public=True)
+        .annotate(
+            total_count=models.Sum(
+                'count__count',
+                filter=models.Q(count__inclusion_time__isnull=False))))
+    ret = dict(
+        (g.name, dict((x.value, x.total_count) for x in vals
+                      if x.total_count))
+        for g, vals in itertools.groupby(counts,
+                                         key=lambda x: x.data_class))
+    ret['last-update'] = (
+        Count.objects.aggregate(models.Min('inclusion_time'))
+        ['inclusion_time__min'])
+    return JsonResponse(ret)

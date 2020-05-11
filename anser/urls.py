@@ -20,5 +20,6 @@ import goose.views
 
 urlpatterns = [
     path('', goose.views.index, name='index'),
+    path('stats.json', goose.views.stats_json, name='stats_json'),
     path('submit', goose.views.submit, name='submit'),
 ]

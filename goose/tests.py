@@ -1,7 +1,9 @@
 import datetime
+import json
 import typing
 
 from django.core import management
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -382,3 +384,80 @@ class ShiftDataTests(TestCase):
             [
                 ('stamp', '', 1, old_dt),
             ])
+
+
+class StatsJsonTests(TestCase):
+    def test_one_submission(self) -> None:
+        dt = datetime.datetime.utcnow()
+        dt_serialized = json.loads(DjangoJSONEncoder().encode(dt))
+        create_data1(dt)
+
+        with self.assertNumQueries(2):
+            resp = self.client.get(reverse('stats_json'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {
+            'last-update': dt_serialized,
+            'profile': {
+                'default/linux/amd64/17.0': 3,
+            },
+            'world': {
+                'dev-libs/libfoo': 5,
+                'dev-libs/libbar': 2,
+                'dev-util/bar': 1,
+            },
+        })
+
+    def test_two_submissions(self) -> None:
+        old_dt = datetime.datetime.utcnow()
+        old_dt_serialized = json.loads(
+            DjangoJSONEncoder().encode(old_dt))
+        create_data1(old_dt)
+        new_dt = old_dt + datetime.timedelta(days=1)
+        create_data1(new_dt)
+
+        with self.assertNumQueries(2):
+            resp = self.client.get(reverse('stats_json'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {
+            'last-update': old_dt_serialized,
+            'profile': {
+                'default/linux/amd64/17.0': 6,
+            },
+            'world': {
+                'dev-libs/libfoo': 10,
+                'dev-libs/libbar': 4,
+                'dev-util/bar': 2,
+            },
+        })
+
+    def test_unprocessed_submission(self) -> None:
+        create_data1(None)
+        with self.assertNumQueries(2):
+            resp = self.client.get(reverse('stats_json'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {
+            'last-update': None,
+            'profile': {},
+            'world': {},
+        })
+
+    def test_mixed(self) -> None:
+        dt = datetime.datetime.utcnow()
+        dt_serialized = json.loads(DjangoJSONEncoder().encode(dt))
+        create_data1(dt)
+        create_data1(None)
+
+        with self.assertNumQueries(2):
+            resp = self.client.get(reverse('stats_json'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {
+            'last-update': dt_serialized,
+            'profile': {
+                'default/linux/amd64/17.0': 3,
+            },
+            'world': {
+                'dev-libs/libfoo': 5,
+                'dev-libs/libbar': 2,
+                'dev-util/bar': 1,
+            },
+        })
