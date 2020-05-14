@@ -1,3 +1,6 @@
+# (c) 2020 Michał Górny
+# 2-clause BSD license
+
 """anser URL Configuration
 
 The `urlpatterns` list routes URLs to views. For more information please see:

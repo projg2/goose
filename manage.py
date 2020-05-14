@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# (c) 2020 Michał Górny
+# 2-clause BSD license
+
 """Django's command-line utility for administrative tasks."""
 import os
 import sys

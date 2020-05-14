@@ -1,3 +1,6 @@
+# (c) 2020 Michał Górny
+# 2-clause BSD license
+
 import itertools
 import json
 import random
