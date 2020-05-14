@@ -23,8 +23,17 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = '6xjh!r_j0m46ix%jqj75-gdk0dv2h#$3gc^#o5$*ne&oc(r0p@'
+class DoNotUseSecretKey(object):
+    def __bytes__(self) -> bytes:
+        raise RuntimeError(
+            'SECRET_KEY should not be used in this project')
+
+    def __str__(self) -> str:
+        raise RuntimeError(
+            'SECRET_KEY should not be used in this project')
+
+
+SECRET_KEY = DoNotUseSecretKey()
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
