@@ -4,6 +4,7 @@
 import datetime
 import json
 import typing
+import unittest
 
 from django.conf import settings
 from django.core import management
@@ -15,10 +16,25 @@ from django.urls import reverse
 from goose.models import Count, DataClass, Value
 
 
+class CountTuple(tuple):
+    """A Count tuple that is sortable"""
+
+    def to_sortable(self) -> tuple:
+        """Return tuple used as a sort key"""
+        return self[:-1] + (self[-1] is not None, self[-1])
+
+    def __lt__(self,
+               other: tuple
+               ) -> bool:
+        assert(isinstance(other, self.__class__))
+        return self.to_sortable() < other.to_sortable()
+
+
 def count_to_tuple(count: Count) -> tuple:
-    return value_to_tuple(count.value) + (
-        count.count,
-        count.inclusion_time)
+    return CountTuple(
+        value_to_tuple(count.value)
+        + (count.count,
+           count.inclusion_time))
 
 
 def value_to_tuple(value: Value) -> tuple:
@@ -276,6 +292,57 @@ class SubmissionTests(TestCase):
                 ('world', 'dev-libs/libbar', count, None),
                 ('world', 'dev-libs/libfoo', count, None),
                 ('world', 'sys-apps/frobnicate', count, None),
+            ])
+
+    @unittest.expectedFailure
+    def test_duplicate_submission_in_last_period(self) -> None:
+        """
+        Test that a last-period duplicate submission is accepted
+
+        If a duplicate submission happens in the last period before
+        removing the old data, we should accept it.  Otherwise, people
+        will have to submit data not every N days but N+1 because
+        of processing delay.
+        """
+
+        dt = datetime.datetime.utcnow()
+        stamp = DataClass.objects.get(name='stamp')
+        stamp_val = Value.objects.create(data_class=stamp, value='')
+        stamps = []
+        for i in range(settings.GOOSE_MAX_PERIODS - 1):
+            Count.objects.create(
+                value=stamp_val,
+                count=1,
+                inclusion_time=dt)
+            stamps.append(('stamp', '', 1, dt))
+            dt -= datetime.timedelta(days=1)
+
+        ident = DataClass.objects.get(name='id')
+        ident_val = Value.objects.create(data_class=ident,
+                                         value='test1')
+        Count.objects.create(
+            value=ident_val,
+            count=1,
+            inclusion_time=dt)
+
+        resp = self.client.put(reverse('submit'),
+                               content_type='application/json',
+                               data=self.JSON_1)
+        self.assertEqual(resp.status_code, 200)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('id', 'test1', 1, None),
+                ('id', 'test1', 1, dt),
+                ('ip', '127.0.0.1', 1, None),
+                ('profile', 'default/linux/amd64/17.0', 1, None),
+            ]
+            + list(reversed(stamps))
+            + [
+                ('world', 'dev-libs/libbar', 1, None),
+                ('world', 'dev-libs/libfoo', 1, None),
+                ('world', 'sys-apps/frobnicate', 1, None),
             ])
 
 
