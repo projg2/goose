@@ -1,12 +1,14 @@
 # (c) 2020 Michał Górny
 # 2-clause BSD license
 
+import ipaddress
 import itertools
 import json
 import random
 
 from pathlib import Path
 
+from django.conf import settings
 from django.db import models, transaction
 from django.http import (
     HttpRequest,
@@ -33,6 +35,12 @@ class GooseDataError(Exception):
 
 class GooseLimitError(Exception):
     pass
+
+
+MAX_COUNT = {
+    'id': 1,
+    'ip': settings.GOOSE_MAX_SUBMISSIONS_PER_IP,
+}
 
 
 @decorators_http.require_http_methods(['GET', 'HEAD'])
@@ -73,6 +81,22 @@ def submit(request: HttpRequest) -> HttpResponse:
     if request.content_type != 'application/json':
         return HttpResponseUnsupportedMediaType()
 
+    ipaddr = ipaddress.ip_address(request.META['REMOTE_ADDR'])
+    if ipaddr.version == 6:
+        # if it's 6to4 or alike, map to the IPv4 address
+        if ipaddr.ipv4_mapped:
+            ipaddr = ipaddr.ipv4_mapped
+        elif ipaddr.sixtofour:
+            ipaddr = ipaddr.sixtofour
+        elif ipaddr.teredo:
+            ipaddr = ipaddr.teredo[1]
+        else:
+            # otherwise, limit per /64 prefix
+            ipaddr = ipaddress.IPv6Address(
+                int(ipaddr) & ~0xffffffffffffffff)
+            # this is going to raise an exception if we cleared it wrong
+            assert ipaddress.IPv6Network((ipaddr, 64))
+
     try:
         try:
             data = json.loads(request.body)
@@ -86,23 +110,33 @@ def submit(request: HttpRequest) -> HttpResponse:
 
         with transaction.atomic():
             for cls in DataClass.objects.all():
-                if cls.name not in data:
+                if cls.name == 'ip':
+                    val = str(ipaddr)
+                elif cls.name in data:
+                    val = data[cls.name]
+                else:
                     continue
-                val = data[cls.name]
+
                 if cls.data_type == DataClass.DataClassType.STRING:
                     if not isinstance(val, str):
                         raise GooseDataError(
                             f'Expected a single string for {cls.name}')
-                    if cls.name == 'id':
+                    if cls.name in ('id', 'ip'):
                         try:
                             xval = Value.objects.get(data_class=cls,
                                                      value=val)
                         except Value.DoesNotExist:
                             pass
                         else:
-                            if Count.objects.filter(value=xval):
+                            cval = (Count.objects.filter(value=xval)
+                                    .aggregate(models.Sum('count'))
+                                    ['count__sum'])
+                            max_count = MAX_COUNT[cls.name]
+                            if cval >= max_count:
                                 raise GooseLimitError(
-                                    f'Data for id={val} already submitted')
+                                    f'No more than {max_count} '
+                                    f'submissions permitted per '
+                                    f'{cls.name}={val}')
                     add_data(cls, val)
                 elif cls.data_type == DataClass.DataClassType.STRING_ARRAY:
                     if (not isinstance(val, list)

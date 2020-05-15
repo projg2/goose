@@ -105,3 +105,7 @@ GOOSE_MAX_PERIODS = 7
 # Min delay between two successive 'shiftdata' calls.  Used to prevent
 # accidentally calling it twice in a row.
 GOOSE_MIN_UPDATE_DELAY = datetime.timedelta(hours=23)
+
+# Max number of submissions from one IPv4 address (or /64 IPv6 network)
+# per one period.
+GOOSE_MAX_SUBMISSIONS_PER_IP = 10

@@ -5,6 +5,7 @@ import datetime
 import json
 import typing
 
+from django.conf import settings
 from django.core import management
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
@@ -97,6 +98,7 @@ class SubmissionTests(TestCase):
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
                 ('id', 'test1', 1, None),
+                ('ip', '127.0.0.1', 1, None),
                 ('profile', 'default/linux/amd64/17.0', 1, None),
                 ('world', 'dev-libs/libbar', 1, None),
                 ('world', 'dev-libs/libfoo', 1, None),
@@ -123,6 +125,7 @@ class SubmissionTests(TestCase):
                 ('id', 'test1', 1, None),
                 ('id', 'test2', 1, None),
                 ('id', 'test3', 1, None),
+                ('ip', '127.0.0.1', 3, None),
                 ('profile', 'default/linux/amd64/17.0', 2, None),
                 ('profile', 'default/linux/amd64/17.1', 1, None),
                 ('world', 'dev-libs/libbar', 3, None),
@@ -145,6 +148,7 @@ class SubmissionTests(TestCase):
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
                 ('id', 'test1', 1, None),
+                ('ip', '127.0.0.1', 1, None),
                 ('profile', 'default/linux/amd64/17.0', 1, None),
                 ('world', 'dev-libs/libbar', 1, None),
                 ('world', 'dev-libs/libfoo', 1, None),
@@ -164,6 +168,7 @@ class SubmissionTests(TestCase):
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
                 ('id', 'test1', 1, None),
+                ('ip', '127.0.0.1', 1, None),
                 ('profile', 'default/linux/amd64/17.0', 1, None),
                 ('profile', 'default/linux/amd64/17.0', 3, dt),
                 ('world', 'dev-libs/libbar', 1, None),
@@ -250,6 +255,28 @@ class SubmissionTests(TestCase):
                                      ]})
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(Count.objects.all())
+
+    def test_duplicate_submission_ip_limit(self) -> None:
+        data = dict(self.JSON_1)
+        count = settings.GOOSE_MAX_SUBMISSIONS_PER_IP
+        for i in range(count + 1):
+            data['id'] = str(i)
+            resp = self.client.put(reverse('submit'),
+                                   content_type='application/json',
+                                   data=data)
+            self.assertEqual(resp.status_code,
+                             200 if i < count else 429)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [('id', str(x), 1, None) for x in range(count)]
+            + [
+                ('ip', '127.0.0.1', count, None),
+                ('profile', 'default/linux/amd64/17.0', count, None),
+                ('world', 'dev-libs/libbar', count, None),
+                ('world', 'dev-libs/libfoo', count, None),
+                ('world', 'sys-apps/frobnicate', count, None),
+            ])
 
 
 class ShiftDataTests(TestCase):
