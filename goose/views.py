@@ -100,6 +100,8 @@ def submit(request: HttpRequest) -> HttpResponse:
     try:
         try:
             data = json.loads(request.body)
+        except UnicodeDecodeError as e:
+            raise GooseDataError(f'Malformed data: {e}')
         except json.JSONDecodeError:
             raise GooseDataError('Malformed JSON')
         if data.get('goose-version') != 1:
