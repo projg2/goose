@@ -2,7 +2,6 @@
 # 2-clause BSD license
 
 import datetime
-import unittest
 
 from django.conf import settings
 from django.core import management
@@ -276,7 +275,20 @@ class SubmissionTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(Count.objects.all())
 
-    @unittest.expectedFailure
+    def test_duplicate_submission_in_almost_last_period(self) -> None:
+        max_age = settings.GOOSE_MAX_PERIODS
+        Count.objects.create(
+            value=Value.objects.create(
+                data_class=DataClass.objects.get(name='id'),
+                value='test1'),
+            count=1,
+            age=max_age-1)
+
+        resp = self.client.put(reverse('submit'),
+                               content_type='application/json',
+                               data=self.JSON_1)
+        self.assertEqual(resp.status_code, 429)
+
     def test_duplicate_submission_in_last_period(self) -> None:
         """
         Test that a last-period duplicate submission is accepted
@@ -287,25 +299,13 @@ class SubmissionTests(TestCase):
         of processing delay.
         """
 
-        dt = datetime.datetime.utcnow()
-        stamp = DataClass.objects.get(name='stamp')
-        stamp_val = Value.objects.create(data_class=stamp, value='')
-        stamps = []
-        for i in range(settings.GOOSE_MAX_PERIODS - 1):
-            Count.objects.create(
-                value=stamp_val,
-                count=1,
-                inclusion_time=dt)
-            stamps.append(('stamp', '', 1, dt))
-            dt -= datetime.timedelta(days=1)
-
-        ident = DataClass.objects.get(name='id')
-        ident_val = Value.objects.create(data_class=ident,
-                                         value='test1')
+        max_age = settings.GOOSE_MAX_PERIODS
         Count.objects.create(
-            value=ident_val,
+            value=Value.objects.create(
+                data_class=DataClass.objects.get(name='id'),
+                value='test1'),
             count=1,
-            inclusion_time=dt)
+            age=max_age)
 
         resp = self.client.put(reverse('submit'),
                                content_type='application/json',
@@ -315,15 +315,12 @@ class SubmissionTests(TestCase):
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('id', 'test1', 1, None),
-                ('id', 'test1', 1, dt),
-                ('profile', 'default/linux/amd64/17.0', 1, None),
-            ]
-            + list(reversed(stamps))
-            + [
-                ('world', 'dev-libs/libbar', 1, None),
-                ('world', 'dev-libs/libfoo', 1, None),
-                ('world', 'sys-apps/frobnicate', 1, None),
+                ('id', 'test1', 1, 0),
+                ('id', 'test1', 1, max_age),
+                ('profile', 'default/linux/amd64/17.0', 1, 0),
+                ('world', 'dev-libs/libbar', 1, 0),
+                ('world', 'dev-libs/libfoo', 1, 0),
+                ('world', 'sys-apps/frobnicate', 1, 0),
             ])
 
 

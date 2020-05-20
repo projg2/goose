@@ -7,6 +7,7 @@ import random
 
 from pathlib import Path
 
+from django.conf import settings
 from django.db import models, transaction
 from django.http import (
     HttpRequest,
@@ -73,6 +74,8 @@ def submit(request: HttpRequest) -> HttpResponse:
     if request.content_type != 'application/json':
         return HttpResponseUnsupportedMediaType()
 
+    max_age = settings.GOOSE_MAX_PERIODS
+
     try:
         try:
             data = json.loads(request.body)
@@ -104,7 +107,8 @@ def submit(request: HttpRequest) -> HttpResponse:
                         except Value.DoesNotExist:
                             pass
                         else:
-                            if Count.objects.filter(value=xval):
+                            if Count.objects.filter(value=xval,
+                                                    age__lt=max_age):
                                 raise GooseLimitError(
                                     f'No more than one submission '
                                     f'permitted per {cls.name}={val}')
