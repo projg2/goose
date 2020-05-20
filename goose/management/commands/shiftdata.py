@@ -56,7 +56,10 @@ class Command(BaseCommand):
                        .aggregate(models.Max('value__value'))
                        ['value__value__max'])
         if last_update is not None:
-            delta = dt - datetime.datetime.fromisoformat(last_update)
+            # TODO: replace it with fromisoformat() when infra manages
+            # to switch to py3.7
+            delta = dt - datetime.datetime.strptime(
+                last_update.split('.')[0], '%Y-%m-%dT%H:%M:%S')
             if delta < min_delay:
                 raise CommandError(
                     f'shiftdata already called {delta} ago, min delay '
