@@ -2,13 +2,10 @@
 # 2-clause BSD license
 
 import datetime
-import json
-import typing
 import unittest
 
 from django.conf import settings
 from django.core import management
-from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -34,7 +31,7 @@ def count_to_tuple(count: Count) -> tuple:
     return CountTuple(
         value_to_tuple(count.value)
         + (count.count,
-           count.inclusion_time))
+           count.age))
 
 
 def value_to_tuple(value: Value) -> tuple:
@@ -42,7 +39,19 @@ def value_to_tuple(value: Value) -> tuple:
             value.value)
 
 
-def create_data1(dt: typing.Optional[datetime.datetime]) -> None:
+def create_stamp(dt: datetime.datetime) -> datetime.datetime:
+    stamp = DataClass.objects.get(name='stamp')
+    with transaction.atomic():
+        Count.objects.create(
+            value=Value.objects.create(
+                data_class=stamp,
+                value=dt.isoformat()),
+            count=1,
+            age=1)
+    return dt
+
+
+def create_data1(age: int) -> None:
     profile = DataClass.objects.get(name='profile')
     world = DataClass.objects.get(name='world')
     with transaction.atomic():
@@ -51,25 +60,25 @@ def create_data1(dt: typing.Optional[datetime.datetime]) -> None:
                 data_class=profile,
                 value='default/linux/amd64/17.0')[0],
             count=3,
-            inclusion_time=dt)
+            age=age)
         Count.objects.create(
             value=Value.objects.get_or_create(
                 data_class=world,
                 value='dev-libs/libfoo')[0],
             count=5,
-            inclusion_time=dt)
+            age=age)
         Count.objects.create(
             value=Value.objects.get_or_create(
                 data_class=world,
                 value='dev-libs/libbar')[0],
             count=2,
-            inclusion_time=dt)
+            age=age)
         Count.objects.create(
             value=Value.objects.get_or_create(
                 data_class=world,
                 value='dev-util/bar')[0],
             count=1,
-            inclusion_time=dt)
+            age=age)
 
 
 class SubmissionTests(TestCase):
@@ -113,11 +122,11 @@ class SubmissionTests(TestCase):
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('id', 'test1', 1, None),
-                ('profile', 'default/linux/amd64/17.0', 1, None),
-                ('world', 'dev-libs/libbar', 1, None),
-                ('world', 'dev-libs/libfoo', 1, None),
-                ('world', 'sys-apps/frobnicate', 1, None),
+                ('id', 'test1', 1, 0),
+                ('profile', 'default/linux/amd64/17.0', 1, 0),
+                ('world', 'dev-libs/libbar', 1, 0),
+                ('world', 'dev-libs/libfoo', 1, 0),
+                ('world', 'sys-apps/frobnicate', 1, 0),
             ])
 
     def test_multiple_submissions(self) -> None:
@@ -137,15 +146,15 @@ class SubmissionTests(TestCase):
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('id', 'test1', 1, None),
-                ('id', 'test2', 1, None),
-                ('id', 'test3', 1, None),
-                ('profile', 'default/linux/amd64/17.0', 2, None),
-                ('profile', 'default/linux/amd64/17.1', 1, None),
-                ('world', 'dev-libs/libbar', 3, None),
-                ('world', 'dev-libs/libfoo', 2, None),
-                ('world', 'sys-apps/example', 1, None),
-                ('world', 'sys-apps/frobnicate', 1, None),
+                ('id', 'test1', 1, 0),
+                ('id', 'test2', 1, 0),
+                ('id', 'test3', 1, 0),
+                ('profile', 'default/linux/amd64/17.0', 2, 0),
+                ('profile', 'default/linux/amd64/17.1', 1, 0),
+                ('world', 'dev-libs/libbar', 3, 0),
+                ('world', 'dev-libs/libfoo', 2, 0),
+                ('world', 'sys-apps/example', 1, 0),
+                ('world', 'sys-apps/frobnicate', 1, 0),
             ])
 
     def test_duplicate_submission(self) -> None:
@@ -161,16 +170,15 @@ class SubmissionTests(TestCase):
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('id', 'test1', 1, None),
-                ('profile', 'default/linux/amd64/17.0', 1, None),
-                ('world', 'dev-libs/libbar', 1, None),
-                ('world', 'dev-libs/libfoo', 1, None),
-                ('world', 'sys-apps/frobnicate', 1, None),
+                ('id', 'test1', 1, 0),
+                ('profile', 'default/linux/amd64/17.0', 1, 0),
+                ('world', 'dev-libs/libbar', 1, 0),
+                ('world', 'dev-libs/libfoo', 1, 0),
+                ('world', 'sys-apps/frobnicate', 1, 0),
             ])
 
     def test_new_submission_with_existing_data(self) -> None:
-        dt = datetime.datetime.utcnow()
-        create_data1(dt)
+        create_data1(1)
 
         resp = self.client.put(reverse('submit'),
                                content_type='application/json',
@@ -180,15 +188,15 @@ class SubmissionTests(TestCase):
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('id', 'test1', 1, None),
-                ('profile', 'default/linux/amd64/17.0', 1, None),
-                ('profile', 'default/linux/amd64/17.0', 3, dt),
-                ('world', 'dev-libs/libbar', 1, None),
-                ('world', 'dev-libs/libbar', 2, dt),
-                ('world', 'dev-libs/libfoo', 1, None),
-                ('world', 'dev-libs/libfoo', 5, dt),
-                ('world', 'dev-util/bar', 1, dt),
-                ('world', 'sys-apps/frobnicate', 1, None),
+                ('id', 'test1', 1, 0),
+                ('profile', 'default/linux/amd64/17.0', 1, 0),
+                ('profile', 'default/linux/amd64/17.0', 3, 1),
+                ('world', 'dev-libs/libbar', 1, 0),
+                ('world', 'dev-libs/libbar', 2, 1),
+                ('world', 'dev-libs/libfoo', 1, 0),
+                ('world', 'dev-libs/libfoo', 5, 1),
+                ('world', 'dev-util/bar', 1, 1),
+                ('world', 'sys-apps/frobnicate', 1, 0),
             ])
 
     def test_bad_method(self) -> None:
@@ -322,129 +330,26 @@ class SubmissionTests(TestCase):
 class ShiftDataTests(TestCase):
     def test_new_data(self) -> None:
         dt = datetime.datetime.utcnow()
-        create_data1(None)
-        management.call_command('shiftdata',
-                                timestamp=dt,
-                                max_periods=2)
+        create_data1(0)
+        with self.assertNumQueries(9):
+            management.call_command('shiftdata',
+                                    timestamp=dt,
+                                    max_periods=2)
 
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('profile', 'default/linux/amd64/17.0', 3, dt),
-                ('stamp', '', 1, dt),
-                ('world', 'dev-libs/libbar', 2, dt),
-                ('world', 'dev-libs/libfoo', 5, dt),
-                ('world', 'dev-util/bar', 1, dt),
+                ('profile', 'default/linux/amd64/17.0', 3, 1),
+                ('stamp', dt.isoformat(), 1, 1),
+                ('world', 'dev-libs/libbar', 2, 1),
+                ('world', 'dev-libs/libfoo', 5, 1),
+                ('world', 'dev-util/bar', 1, 1),
             ])
 
     def test_old_data(self) -> None:
-        old_dt = datetime.datetime.utcnow()
-        new_dt = old_dt + datetime.timedelta(days=1)
-        create_data1(old_dt)
-        management.call_command('shiftdata',
-                                timestamp=new_dt,
-                                max_periods=2)
-
-        self.assertEqual(
-            sorted(count_to_tuple(x) for x in Count.objects.all()),
-            [
-                ('profile', 'default/linux/amd64/17.0', 3, old_dt),
-                ('stamp', '', 1, new_dt),
-                ('world', 'dev-libs/libbar', 2, old_dt),
-                ('world', 'dev-libs/libfoo', 5, old_dt),
-                ('world', 'dev-util/bar', 1, old_dt),
-            ])
-
-    def test_very_old_data(self) -> None:
-        old_dt = datetime.datetime.utcnow()
-        mid_dt = old_dt + datetime.timedelta(days=1)
-        new_dt = mid_dt + datetime.timedelta(days=1)
-        create_data1(old_dt)
-
-        management.call_command('shiftdata',
-                                timestamp=mid_dt,
-                                max_periods=2)
-        management.call_command('shiftdata',
-                                timestamp=new_dt,
-                                max_periods=2)
-
-        self.assertEqual(
-            sorted(count_to_tuple(x) for x in Count.objects.all()),
-            [
-                ('stamp', '', 1, mid_dt),
-                ('stamp', '', 1, new_dt),
-            ])
-        self.assertEqual(
-            sorted(value_to_tuple(x) for x in Value.objects.all()),
-            [
-                ('stamp', ''),
-            ])
-
-    def test_prehistoric_data(self) -> None:
-        ancient_dt = datetime.datetime.utcnow()
-        old_dt = ancient_dt + datetime.timedelta(days=1)
-        mid_dt = old_dt + datetime.timedelta(days=1)
-        new_dt = mid_dt + datetime.timedelta(days=1)
-        create_data1(ancient_dt)
-        create_data1(old_dt)
-
-        management.call_command('shiftdata',
-                                timestamp=mid_dt,
-                                max_periods=2)
-        management.call_command('shiftdata',
-                                timestamp=new_dt,
-                                max_periods=2)
-
-        self.assertEqual(
-            sorted(count_to_tuple(x) for x in Count.objects.all()),
-            [
-                ('stamp', '', 1, mid_dt),
-                ('stamp', '', 1, new_dt),
-            ])
-        self.assertEqual(
-            sorted(value_to_tuple(x) for x in Value.objects.all()),
-            [
-                ('stamp', ''),
-            ])
-
-    def test_mixed_data(self) -> None:
-        old_dt = datetime.datetime.utcnow()
-        mid_dt = old_dt + datetime.timedelta(days=1)
-        new_dt = mid_dt + datetime.timedelta(days=1)
-        create_data1(old_dt)
-        create_data1(None)
-        management.call_command('shiftdata',
-                                timestamp=mid_dt,
-                                max_periods=2)
-
-        create_data1(None)
-        management.call_command('shiftdata',
-                                timestamp=new_dt,
-                                max_periods=2)
-
-        self.assertEqual(
-            sorted(count_to_tuple(x) for x in Count.objects.all()),
-            [
-                ('profile', 'default/linux/amd64/17.0', 3, mid_dt),
-                ('profile', 'default/linux/amd64/17.0', 3, new_dt),
-                ('stamp', '', 1, mid_dt),
-                ('stamp', '', 1, new_dt),
-                ('world', 'dev-libs/libbar', 2, mid_dt),
-                ('world', 'dev-libs/libbar', 2, new_dt),
-                ('world', 'dev-libs/libfoo', 5, mid_dt),
-                ('world', 'dev-libs/libfoo', 5, new_dt),
-                ('world', 'dev-util/bar', 1, mid_dt),
-                ('world', 'dev-util/bar', 1, new_dt),
-            ])
-
-    def test_too_frequent(self) -> None:
-        old_dt = datetime.datetime.utcnow()
-        new_dt = old_dt + datetime.timedelta(hours=12)
-
-        management.call_command('shiftdata',
-                                timestamp=old_dt,
-                                max_periods=2)
-        with self.assertRaises(management.CommandError):
+        new_dt = datetime.datetime.utcnow()
+        create_data1(1)
+        with self.assertNumQueries(9):
             management.call_command('shiftdata',
                                     timestamp=new_dt,
                                     max_periods=2)
@@ -452,21 +357,130 @@ class ShiftDataTests(TestCase):
         self.assertEqual(
             sorted(count_to_tuple(x) for x in Count.objects.all()),
             [
-                ('stamp', '', 1, old_dt),
+                ('profile', 'default/linux/amd64/17.0', 3, 2),
+                ('stamp', new_dt.isoformat(), 1, 1),
+                ('world', 'dev-libs/libbar', 2, 2),
+                ('world', 'dev-libs/libfoo', 5, 2),
+                ('world', 'dev-util/bar', 1, 2),
+            ])
+
+    def test_very_old_data(self) -> None:
+        mid_dt = datetime.datetime.utcnow()
+        new_dt = mid_dt + datetime.timedelta(days=1)
+        create_data1(2)
+
+        with self.assertNumQueries(11):
+            management.call_command('shiftdata',
+                                    timestamp=mid_dt,
+                                    max_periods=2)
+        with self.assertNumQueries(9):
+            management.call_command('shiftdata',
+                                    timestamp=new_dt,
+                                    max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('stamp', mid_dt.isoformat(), 1, 2),
+                ('stamp', new_dt.isoformat(), 1, 1),
+            ])
+        self.assertEqual(
+            sorted(value_to_tuple(x) for x in Value.objects.all()),
+            [
+                ('stamp', mid_dt.isoformat()),
+                ('stamp', new_dt.isoformat()),
+            ])
+
+    def test_prehistoric_data(self) -> None:
+        mid_dt = datetime.datetime.utcnow()
+        new_dt = mid_dt + datetime.timedelta(days=1)
+        create_data1(3)
+        create_data1(2)
+
+        with self.assertNumQueries(11):
+            management.call_command('shiftdata',
+                                    timestamp=mid_dt,
+                                    max_periods=2)
+        with self.assertNumQueries(9):
+            management.call_command('shiftdata',
+                                    timestamp=new_dt,
+                                    max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('stamp', mid_dt.isoformat(), 1, 2),
+                ('stamp', new_dt.isoformat(), 1, 1),
+            ])
+        self.assertEqual(
+            sorted(value_to_tuple(x) for x in Value.objects.all()),
+            [
+                ('stamp', mid_dt.isoformat()),
+                ('stamp', new_dt.isoformat()),
+            ])
+
+    def test_mixed_data(self) -> None:
+        mid_dt = datetime.datetime.utcnow()
+        new_dt = mid_dt + datetime.timedelta(days=1)
+        create_data1(1)
+        create_data1(0)
+        with self.assertNumQueries(9):
+            management.call_command('shiftdata',
+                                    timestamp=mid_dt,
+                                    max_periods=2)
+
+        create_data1(0)
+        with self.assertNumQueries(9):
+            management.call_command('shiftdata',
+                                    timestamp=new_dt,
+                                    max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('profile', 'default/linux/amd64/17.0', 3, 1),
+                ('profile', 'default/linux/amd64/17.0', 3, 2),
+                ('stamp', mid_dt.isoformat(), 1, 2),
+                ('stamp', new_dt.isoformat(), 1, 1),
+                ('world', 'dev-libs/libbar', 2, 1),
+                ('world', 'dev-libs/libbar', 2, 2),
+                ('world', 'dev-libs/libfoo', 5, 1),
+                ('world', 'dev-libs/libfoo', 5, 2),
+                ('world', 'dev-util/bar', 1, 1),
+                ('world', 'dev-util/bar', 1, 2),
+            ])
+
+    def test_too_frequent(self) -> None:
+        old_dt = datetime.datetime.utcnow()
+        new_dt = old_dt + datetime.timedelta(hours=12)
+
+        with self.assertNumQueries(9):
+            management.call_command('shiftdata',
+                                    timestamp=old_dt,
+                                    max_periods=2)
+        with self.assertNumQueries(2):
+            with self.assertRaises(management.CommandError):
+                management.call_command('shiftdata',
+                                        timestamp=new_dt,
+                                        max_periods=2)
+
+        self.assertEqual(
+            sorted(count_to_tuple(x) for x in Count.objects.all()),
+            [
+                ('stamp', old_dt.isoformat(), 1, 1),
             ])
 
 
 class StatsJsonTests(TestCase):
     def test_one_submission(self) -> None:
-        dt = datetime.datetime.utcnow()
-        dt_serialized = json.loads(DjangoJSONEncoder().encode(dt))
-        create_data1(dt)
+        dt = create_stamp(datetime.datetime.utcnow())
+        create_data1(1)
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             resp = self.client.get(reverse('stats_json'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {
-            'last-update': dt_serialized,
+            'last-update': dt.isoformat(),
             'profile': {
                 'default/linux/amd64/17.0': 3,
             },
@@ -478,18 +492,16 @@ class StatsJsonTests(TestCase):
         })
 
     def test_two_submissions(self) -> None:
-        old_dt = datetime.datetime.utcnow()
-        old_dt_serialized = json.loads(
-            DjangoJSONEncoder().encode(old_dt))
-        create_data1(old_dt)
-        new_dt = old_dt + datetime.timedelta(days=1)
-        create_data1(new_dt)
+        old_dt = create_stamp(datetime.datetime.utcnow())
+        create_data1(2)
+        new_dt = create_stamp(old_dt + datetime.timedelta(days=1))
+        create_data1(1)
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             resp = self.client.get(reverse('stats_json'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {
-            'last-update': old_dt_serialized,
+            'last-update': new_dt.isoformat(),
             'profile': {
                 'default/linux/amd64/17.0': 6,
             },
@@ -501,8 +513,8 @@ class StatsJsonTests(TestCase):
         })
 
     def test_unprocessed_submission(self) -> None:
-        create_data1(None)
-        with self.assertNumQueries(2):
+        create_data1(0)
+        with self.assertNumQueries(3):
             resp = self.client.get(reverse('stats_json'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {
@@ -512,16 +524,15 @@ class StatsJsonTests(TestCase):
         })
 
     def test_mixed(self) -> None:
-        dt = datetime.datetime.utcnow()
-        dt_serialized = json.loads(DjangoJSONEncoder().encode(dt))
-        create_data1(dt)
-        create_data1(None)
+        dt = create_stamp(datetime.datetime.utcnow())
+        create_data1(1)
+        create_data1(0)
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             resp = self.client.get(reverse('stats_json'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {
-            'last-update': dt_serialized,
+            'last-update': dt.isoformat(),
             'profile': {
                 'default/linux/amd64/17.0': 3,
             },

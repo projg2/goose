@@ -87,17 +87,17 @@ class Count(models.Model):
     `value` is the value.  It implies the data type as well.
     `count` is the number of occurrences in the partial sum.
 
-    `inclusion_time` specifies the timestamp for including the data
-    in public statistics.  It is initially null, preventing the data
-    from being included until the next bulk update.  Afterwards,
-    it is used to remove outdated data.
+    `age` indicates the age of data.  It starts at 0 at submission time,
+    and it is increased periodically.  Data with age >= 1 is included
+    in public statistics, data with age defined in settings is discarded
+    as outdated.
     """
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
                 name='unique_count',
-                fields=['value', 'inclusion_time']),
+                fields=['value', 'age']),
         ]
 
     value = models.ForeignKey(
@@ -107,11 +107,9 @@ class Count(models.Model):
     count = models.IntegerField(
         default=1,
         help_text='Number of occurrences of the value')
-    inclusion_time = models.DateTimeField(
-        default=None,
-        help_text='Timestamp of including the data in overall statistic',
-        null=True)
+    age = models.IntegerField(
+        default=0,
+        help_text='Age of data')
 
     def __str__(self) -> str:
-        return (f'count: {self.count} of {self.value}, included: '
-                f'{self.inclusion_time}')
+        return (f'count: {self.count} of {self.value}, age: {self.age}')

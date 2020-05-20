@@ -6,7 +6,7 @@ import datetime
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import dateparse
 
 from goose.models import Count, DataClass, Value
@@ -50,24 +50,26 @@ class Command(BaseCommand):
         min_delay = (options['min_delay']
                      or settings.GOOSE_MIN_UPDATE_DELAY)
 
-        stamps = sorted(set(x[0] for x in Count.objects
-                            .filter(inclusion_time__isnull=False)
-                            .values_list('inclusion_time')))
-        if stamps:
-            if dt - stamps[-1] < min_delay:
+        stamp_cls = DataClass.objects.get(name='stamp')
+
+        last_update = (Count.objects.filter(value__data_class=stamp_cls)
+                       .aggregate(models.Max('value__value'))
+                       ['value__value__max'])
+        if last_update is not None:
+            delta = dt - datetime.datetime.fromisoformat(last_update)
+            if delta < min_delay:
                 raise CommandError(
-                    'shiftdata already called {dt - stamps[-1]} ago, '
-                    'min delay is set to {min_delay}')
-        to_remove = stamps[:-keep_periods+1]
+                    f'shiftdata already called {delta} ago, min delay '
+                    f'is set to {min_delay}')
 
         with transaction.atomic():
-            Count.objects.filter(inclusion_time__in=to_remove).delete()
+            Count.objects.filter(age__gte=keep_periods).delete()
+            # TODO: can we prevent unnecessary manual cascade here?
             Value.objects.filter(count=None).delete()
+            Count.objects.all().update(age=models.F('age')+1)
             Count.objects.create(
-                value=Value.objects.get_or_create(
-                    data_class=DataClass.objects.get(name='stamp'),
-                    value='')[0],
+                value=Value.objects.create(
+                    data_class=stamp_cls,
+                    value=dt.isoformat()),
                 count=1,
-                inclusion_time=None)
-            Count.objects.filter(inclusion_time__isnull=True).update(
-                inclusion_time=dt)
+                age=1)

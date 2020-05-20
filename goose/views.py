@@ -61,7 +61,7 @@ def add_data(data_cls: DataClass, value: str) -> None:
         value=value)
     count, created = Count.objects.get_or_create(
         value=xval,
-        inclusion_time=None,
+        age=0,
         defaults={'count': 1})
     if not created:
         count.count += 1
@@ -138,13 +138,15 @@ def stats_json(request: HttpRequest) -> HttpResponse:
         .annotate(
             total_count=models.Sum(
                 'count__count',
-                filter=models.Q(count__inclusion_time__isnull=False))))
+                filter=models.Q(count__age__gt=0))))
     ret = dict(
         (g.name, dict((x.value, x.total_count) for x in vals
                       if x.total_count))
         for g, vals in itertools.groupby(counts,
                                          key=lambda x: x.data_class))
-    ret['last-update'] = (
-        Count.objects.aggregate(models.Min('inclusion_time'))
-        ['inclusion_time__min'])
+    stamp_cls = DataClass.objects.get(name='stamp')
+    ret['last-update'] = (Count.objects.filter(
+                              value__data_class=stamp_cls)
+                          .aggregate(models.Max('value__value'))
+                          ['value__value__max'])
     return JsonResponse(ret)
