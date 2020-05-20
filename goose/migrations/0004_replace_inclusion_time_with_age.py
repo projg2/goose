@@ -13,7 +13,7 @@ def convert_to_age(apps: migrations.state.StateApps,
     Count = apps.get_model('goose', 'Count')
     times = sorted(frozenset(x['inclusion_time'] for x
                              in Count.objects.all()
-                                .values('inclusion_time')))
+                             .values('inclusion_time')))
     for i, dt in enumerate(reversed(times)):
         Count.objects.filter(inclusion_time=dt).update(age=i+1)
 
